@@ -112,6 +112,56 @@ def test_idempotent_equivalent_element_order_h2o_oh2(monkeypatch):
     assert fetched.json()["coefficients"]["vector"] == [2, 1, 2]
 
 
+def test_spaced_charge_forms_balance_and_share_cache(monkeypatch):
+    """Fe3 + / O2 - 等数字与符号间带空格的写法与紧凑写法等价：
+    配平成功、/analyze 一致且命中同一 reaction_id（规范物种键相同）。"""
+    from app import service
+    from app.cache import ReactionCache
+
+    monkeypatch.setattr(service, "cache", ReactionCache(":memory:"))
+
+    compact = client.post(
+        "/api/v1/balance",
+        json={"reactants": ["Fe2+"], "products": ["Fe3+", "e-"]},
+    )
+    spaced = client.post(
+        "/api/v1/balance",
+        json={"reactants": ["Fe2 +"], "products": ["Fe3 +", "e -"]},
+    )
+    assert compact.status_code == spaced.status_code == 200
+    d1, d2 = compact.json(), spaced.json()
+    assert d1["reaction_id"] == d2["reaction_id"]
+    assert d2["cached"] is True
+    assert d1["coefficients"]["vector"] == d2["coefficients"]["vector"] == [1, 1, 1]
+    assert d2["normalized"]["products"] == ["e^-", "Fe^3+"]
+    assert d2["charge_balance"]["balanced"] is True
+    # input 回显本次写法，normalized 归一
+    assert d2["coefficients"]["reactants"][0]["input"] == "Fe2 +"
+    assert d2["coefficients"]["reactants"][0]["normalized"] == "Fe^2+"
+
+    # 多原子离子：NH4 + / SO4 2- 同样可配平
+    precip = client.post(
+        "/api/v1/balance",
+        json={"reactants": ["Ba2 +", "SO4 2-"], "products": ["BaSO4"]},
+    )
+    assert precip.status_code == 200
+    p = precip.json()
+    assert p["coefficients"]["vector"] == [1, 1, 1]
+    assert p["charge_balance"]["balanced"] is True
+
+    # /analyze 与配平共享签名，命中同一 reaction_id
+    analyzed = client.post(
+        "/api/v1/analyze",
+        json={"reactants": ["Fe2 +"], "products": ["Fe3 +", "e -"]},
+    )
+    assert analyzed.status_code == 200
+    a = analyzed.json()
+    assert a["reaction_id"] == d1["reaction_id"]
+    assert a["cached"] is True
+    assert a["balanced_ok"] is True
+    assert a["balanced"]["charge"]["balanced"] is True
+
+
 def test_idempotent_side_swap_is_different_id(monkeypatch):
     """调换反应物与生成物侧别应得到不同 reaction_id（侧别保留在签名中）。"""
     from app import service

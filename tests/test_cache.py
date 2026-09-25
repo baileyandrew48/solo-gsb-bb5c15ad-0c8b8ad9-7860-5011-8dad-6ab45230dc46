@@ -58,6 +58,20 @@ def test_signature_ignores_normalized_spelling_and_order():
     assert "H2O" not in sig and "OH2" not in sig
 
 
+def test_signature_spaced_charge_forms_share_key():
+    """Fe3 + / Fe3+、O2 - / O2-、NH4 + / NH4+ 的规范键相同 -> 签名相同。"""
+    assert build_signature([_species("Fe3 +")], [_species("Fe3+"), _species("e-")]) == \
+        build_signature([_species("Fe3+")], [_species("Fe3 +"), _species("e -")])
+    assert build_signature([_species("Ba2 +")], [_species("BaSO4")]) == \
+        build_signature([_species("Ba2+")], [_species("BaSO4")])
+    # 多原子：NH4 + 与 NH4+ 同键；与把 4 误当电荷的写法（不存在合法文本）无关
+    assert build_signature([_species("NH4 +")], []) == \
+        build_signature([_species("NH4+")], [])
+    # SO4 2- 与 SO4^2- 同键
+    assert build_signature([_species("SO4 2-")], []) == \
+        build_signature([_species("SO4^2-")], [])
+
+
 def test_signature_preserves_side_charge_and_multiplicity():
     h2o = _species("H2O")
     h2 = _species("H2")

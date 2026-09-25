@@ -101,6 +101,29 @@ def test_empty_side():
         solve_reaction([], ["H2O"])
 
 
+def test_spaced_charge_forms_balance_like_compact_forms():
+    """Fe3 + / O2 - 等带空格写法与 Fe3+ / O2- 组成电荷一致，配平结果相同。"""
+    compact = solve_reaction(
+        ["Fe2+"], ["Fe3+", "e-"]
+    )
+    spaced = solve_reaction(
+        ["Fe2 +"], ["Fe3 +", "e -"]
+    )
+    assert coefficient_map(spaced) == coefficient_map(compact)
+
+    # 多原子离子同样等价：NH4 + / SO4 2-
+    solved = solve_reaction(
+        ["NH4 +", "OH -"], ["NH3", "H2O"]
+    )
+    assert coefficient_map(solved) == {"NH4^+": 1, "OH^-": 1, "NH3": 1, "H2O": 1}
+
+    # 误解析时会因电荷/元素不守恒报 IMPOSSIBLE_BALANCE：确认空格写法可配平
+    sulfate = solve_reaction(
+        ["Ba2 +", "SO4 2-"], ["BaSO4"]
+    )
+    assert coefficient_map(sulfate) == {"Ba^2+": 1, "SO4^2-": 1, "BaSO4": 1}
+
+
 def test_raw_view_difference():
     reactants = parse_side(["H2", "O2"], "反应物")
     products = parse_side(["H2O"], "生成物")

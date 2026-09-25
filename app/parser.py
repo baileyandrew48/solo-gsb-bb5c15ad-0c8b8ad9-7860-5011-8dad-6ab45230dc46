@@ -22,6 +22,8 @@
 * 物种仅含一个原子/基团时视为电荷：``Fe3+`` → Fe³⁺、``O2-`` → O²⁻；
 * 含多个原子时数字是下标、符号单独表示 ±1：``NH4+`` → NH₄⁺、``MnO4-`` → MnO₄⁻；
 * 电荷前有空格时数字一定是电荷：``SO4 2-`` → SO₄²⁻；
+* **数字与正负号之间的空白不改变判定**：``Fe3 +`` 与 ``Fe3+``、``O2 -`` 与
+  ``O2-``、``NH4 +`` 与 ``NH4+`` 完全等价（组成与电荷一致）；
 * 任何无歧义场景都可显式写 ``^``：``SO4^2-``、``[Cu(NH3)4]^2+``、``O^{2-}``。
 """
 
@@ -231,22 +233,29 @@ class _Parser:
         * 目前只解析了一个原子/基团（如 ``Fe3+``、``(SO4)2-``）：数字属于电荷；
         * 多原子序列（如 ``NH4+``、``MnO4-``）：数字是下标，符号单独表示 ±1。
 
-        括号内没有电荷歧义，数字始终是下标。
+        数字与正负号之间的空白不改变上述判定：``Fe3 +`` 与 ``Fe3+`` 同为
+        Fe³⁺、``O2 -`` 与 ``O2-`` 同为 O²⁻、``NH4 +`` 与 ``NH4+`` 同为
+        NH₄⁺；只有多原子序列且数字**前**有空白时（``SO4 2-``）数字才强制
+        按电荷处理。括号内没有电荷歧义，数字始终是下标。
         """
         start = self.i
         self._skip_ws()
         space_before = self.i > start
         if space_before and self.i < len(self.s) and self.s[self.i].isdigit():
-            # 下标不允许前置空白。若顶层的数字段后面跟正负号并结束，按电荷处理；
-            # 其余情况直接报错。
+            # 下标不允许前置空白。若顶层的数字段后面（可跨空白）跟正负号并
+            # 结束，按电荷处理；其余情况直接报错。
             j = self.i
             while j < len(self.s) and self.s[j].isdigit():
                 j += 1
             k = j
             while k < len(self.s) and self.s[k].isspace():
                 k += 1
-            if not self._stack and k < len(self.s) and self.s[k] in _SIGN and k + 1 == len(self.s):
-                return 1
+            if not self._stack and k < len(self.s) and self.s[k] in _SIGN:
+                m = k + 1
+                while m < len(self.s) and self.s[m].isspace():
+                    m += 1
+                if m == len(self.s):
+                    return 1
             raise FormulaError(
                 f"意外的数字（位置 {self.i}）：下标前不能有空格，"
                 "若想表示电荷请写成 \"SO4^2-\" 或 \"SO4 2-\""
@@ -259,15 +268,19 @@ class _Parser:
         if not digits:
             self.i = j
             return 1
-        if not self._stack and j < len(self.s) and self.s[j] in _SIGN:
-            # 跳过符号后的空白；后面没有字符才算结尾
-            k = j + 1
+        if not self._stack:
+            # 数字与符号之间允许空白：Fe3 + / O2 - 与 Fe3+ / O2- 等价，
+            # 是否按电荷处理仍只取决于单原子/基团还是多原子序列。
+            k = j
             while k < len(self.s) and self.s[k].isspace():
                 k += 1
-            at_end = k == len(self.s)
-            if at_end and (space_before or single_token):
-                # 数字属于电荷，不消费
-                return 1
+            if k < len(self.s) and self.s[k] in _SIGN:
+                m = k + 1
+                while m < len(self.s) and self.s[m].isspace():
+                    m += 1
+                if m == len(self.s) and single_token:
+                    # 数字属于电荷，不消费
+                    return 1
         self.i = j
         value = int(digits)
         if value == 0:

@@ -23,6 +23,17 @@ from app.parser import FormulaError, parse_formula
         ("OH-", "OH^-", -1),
         ("H+", "H^+", 1),
         ("SO4 2-", "SO4^2-", -2),       # 电荷前空格
+        ("Fe3 +", "Fe^3+", 3),          # 数字与符号间空格：仍为 Fe³⁺
+        ("O2 -", "O^2-", -2),           # 同上，O²⁻
+        ("Mn2 +", "Mn^2+", 2),
+        ("Ba2 +", "Ba^2+", 2),
+        ("Fe3\t+", "Fe^3+", 3),         # 任意空白等价
+        ("Fe 3 +", "Fe^3+", 3),         # 数字前后都有空格
+        ("NH4 +", "NH4^+", 1),          # 多原子：空格不改变下标语义
+        ("MnO4 -", "MnO4^-", -1),
+        ("OH -", "OH^-", -1),
+        ("H +", "H^+", 1),
+        ("SO4 2 -", "SO4^2-", -2),      # 电荷数字前、符号前都有空格
         ("O^{2-}", "O^2-", -2),
         ("Fe^{3+}", "Fe^3+", 3),
         ("e-", "e^-", -1),
@@ -42,6 +53,37 @@ def test_parse_valid(text, normalized, charge):
 def test_composition():
     parsed = parse_formula("Mg3[Fe(CN)6]2")
     assert parsed.composition == {"Mg": 3, "Fe": 2, "C": 12, "N": 12}
+
+
+@pytest.mark.parametrize(
+    "compact,spaced",
+    [
+        ("Fe3+", "Fe3 +"),
+        ("O2-", "O2 -"),
+        ("Mn2+", "Mn2 +"),
+        ("NH4+", "NH4 +"),
+        ("MnO4-", "MnO4 -"),
+        ("OH-", "OH -"),
+        ("H+", "H +"),
+        ("SO4^2-", "SO4 2-"),
+        ("SO4^2-", "SO4 2 -"),
+    ],
+)
+def test_spaced_charge_equivalent(compact, spaced):
+    """数字与正负号之间的空格不改变组成与电荷（规范键与规范化文本一致）。"""
+    a = parse_formula(compact)
+    b = parse_formula(spaced)
+    assert b.key == a.key
+    assert b.composition == a.composition
+    assert b.charge == a.charge
+    assert b.normalized == a.normalized
+
+
+def test_spaced_digit_before_multi_atom_is_charge():
+    """多原子序列 + 数字前空格：数字仍强制按电荷处理（SO4 2-）。"""
+    parsed = parse_formula("SO4 2-")
+    assert parsed.composition == {"S": 1, "O": 4}
+    assert parsed.charge == -2
 
 
 def test_electron_key():
@@ -73,6 +115,8 @@ def test_electron_key():
         "H2O 3",
         "^-",
         "H^{}",
+        "H2O 3",       # 数字前有空格但缺少电荷符号
+        "Fe3 2",       # 同上
     ],
 )
 def test_parse_invalid(text):
