@@ -22,6 +22,8 @@
 * 物种仅含一个原子/基团时视为电荷：``Fe3+`` → Fe³⁺、``O2-`` → O²⁻；
 * 含多个原子时数字是下标、符号单独表示 ±1：``NH4+`` → NH₄⁺、``MnO4-`` → MnO₄⁻；
 * 电荷前有空格时数字一定是电荷：``SO4 2-`` → SO₄²⁻；
+* 数字与正负号之间的空白不改变含义：``Fe3 +`` 等价于 ``Fe3+``、
+  ``O2 -`` 等价于 ``O2-``、``SO4 2 -`` 等价于 ``SO4 2-``；
 * 任何无歧义场景都可显式写 ``^``：``SO4^2-``、``[Cu(NH3)4]^2+``、``O^{2-}``。
 """
 
@@ -231,22 +233,31 @@ class _Parser:
         * 目前只解析了一个原子/基团（如 ``Fe3+``、``(SO4)2-``）：数字属于电荷；
         * 多原子序列（如 ``NH4+``、``MnO4-``）：数字是下标，符号单独表示 ±1。
 
-        括号内没有电荷歧义，数字始终是下标。
+        数字与正负号之间允许出现空白且不改变判定（``Fe3 +`` == ``Fe3+``、
+        ``NH4 +`` == ``NH4+``）。括号内没有电荷歧义，数字始终是下标。
         """
         start = self.i
         self._skip_ws()
         space_before = self.i > start
         if space_before and self.i < len(self.s) and self.s[self.i].isdigit():
-            # 下标不允许前置空白。若顶层的数字段后面跟正负号并结束，按电荷处理；
-            # 其余情况直接报错。
+            # 下标不允许前置空白。若顶层的数字段后面（允许数字与符号之间再
+            # 有空白）跟正负号并结束，按电荷处理；其余情况直接报错。
             j = self.i
             while j < len(self.s) and self.s[j].isdigit():
                 j += 1
             k = j
             while k < len(self.s) and self.s[k].isspace():
                 k += 1
-            if not self._stack and k < len(self.s) and self.s[k] in _SIGN and k + 1 == len(self.s):
-                return 1
+            if (
+                not self._stack
+                and k < len(self.s)
+                and self.s[k] in _SIGN
+            ):
+                m = k + 1
+                while m < len(self.s) and self.s[m].isspace():
+                    m += 1
+                if m == len(self.s):
+                    return 1
             raise FormulaError(
                 f"意外的数字（位置 {self.i}）：下标前不能有空格，"
                 "若想表示电荷请写成 \"SO4^2-\" 或 \"SO4 2-\""
@@ -259,12 +270,17 @@ class _Parser:
         if not digits:
             self.i = j
             return 1
-        if not self._stack and j < len(self.s) and self.s[j] in _SIGN:
+        # 数字与正负号之间的空白不改变含义（``Fe3 +`` 等价于 ``Fe3+``）：
+        # 跳过空白再判断数字是否属于末尾电荷。
+        k = j
+        while k < len(self.s) and self.s[k].isspace():
+            k += 1
+        if not self._stack and k < len(self.s) and self.s[k] in _SIGN:
             # 跳过符号后的空白；后面没有字符才算结尾
-            k = j + 1
-            while k < len(self.s) and self.s[k].isspace():
-                k += 1
-            at_end = k == len(self.s)
+            m = k + 1
+            while m < len(self.s) and self.s[m].isspace():
+                m += 1
+            at_end = m == len(self.s)
             if at_end and (space_before or single_token):
                 # 数字属于电荷，不消费
                 return 1

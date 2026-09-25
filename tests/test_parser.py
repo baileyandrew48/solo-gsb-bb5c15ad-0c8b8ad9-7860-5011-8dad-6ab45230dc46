@@ -18,11 +18,20 @@ from app.parser import FormulaError, parse_formula
         ("Fe3+", "Fe^3+", 3),           # 单原子：数字是电荷
         ("O2-", "O^2-", -2),
         ("Ba2+", "Ba^2+", 2),
+        ("Fe3 +", "Fe^3+", 3),          # 数字与符号间空格不改变含义
+        ("Fe3  +", "Fe^3+", 3),
+        ("O2 -", "O^2-", -2),
+        ("Ba2 +", "Ba^2+", 2),
+        ("(SO4)2 -", "(SO4)^2-", -2),   # 单基团 + 空格符号：数字仍是电荷
         ("NH4+", "NH4^+", 1),           # 多原子：数字是下标
         ("MnO4-", "MnO4^-", -1),
+        ("NH4 +", "NH4^+", 1),          # 多原子 + 空格符号：数字仍是下标
+        ("MnO4 -", "MnO4^-", -1),
         ("OH-", "OH^-", -1),
         ("H+", "H^+", 1),
         ("SO4 2-", "SO4^2-", -2),       # 电荷前空格
+        ("SO4 2 -", "SO4^2-", -2),      # 电荷数字两侧都有空格
+        ("SO4  2  -", "SO4^2-", -2),
         ("O^{2-}", "O^2-", -2),
         ("Fe^{3+}", "Fe^3+", 3),
         ("e-", "e^-", -1),
@@ -47,6 +56,30 @@ def test_composition():
 def test_electron_key():
     assert parse_formula("e-").is_electron is True
     assert parse_formula("e").key == (((), -1))
+
+
+@pytest.mark.parametrize(
+    "compact,spaced",
+    [
+        ("Fe3+", "Fe3 +"),
+        ("Fe3+", "  Fe3  +  "),
+        ("O2-", "O2 -"),
+        ("Ba2+", "Ba2 +"),
+        ("NH4+", "NH4 +"),
+        ("MnO4-", "MnO4 -"),
+        ("SO4^2-", "SO4 2 -"),
+        ("SO4 2-", "SO4  2  -"),
+        ("(SO4)2-", "(SO4)2 -"),
+        ("[Cu(NH3)4]^2+", "[Cu(NH3)4]^2 +"),
+    ],
+)
+def test_spaced_charge_equivalent(compact, spaced):
+    """符号前的空格不改变组成与电荷：规范文本与规范键必须一致。"""
+    a, b = parse_formula(compact), parse_formula(spaced)
+    assert a.normalized == b.normalized
+    assert a.composition == b.composition
+    assert a.charge == b.charge
+    assert a.key == b.key
 
 
 @pytest.mark.parametrize(

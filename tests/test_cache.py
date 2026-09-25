@@ -72,6 +72,32 @@ def test_signature_preserves_side_charge_and_multiplicity():
     )
 
 
+@pytest.mark.parametrize(
+    "compact,spaced",
+    [
+        ("Fe3+", "Fe3 +"),
+        ("O2-", "O2 -"),
+        ("NH4+", "NH4 +"),
+        ("SO4^2-", "SO4 2 -"),
+    ],
+)
+def test_signature_ignores_space_before_charge_sign(compact, spaced):
+    """符号前的空格不改变规范键：两种写法必须命中同一缓存记录。"""
+    sig = build_signature([_species(compact)], [_species("H2")])
+    assert sig == build_signature([_species(spaced)], [_species("H2")])
+
+    c = ReactionCache(":memory:")
+    reactants = [_species(compact)]
+    products = [_species("H2")]
+    record = c.put(sig, reactants, products, {"k": 1}, ["H"], None)
+    hit = c.get_by_signature(
+        build_signature([_species(spaced)], [_species("H2")])
+    )
+    assert hit is not None
+    assert hit.reaction_id == record.reaction_id
+    assert hit.canonical_reactants == record.canonical_reactants
+
+
 # ------------------------------------------------------------ 基本读写
 def test_put_get_roundtrip():
     c = ReactionCache(":memory:")

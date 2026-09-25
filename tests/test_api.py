@@ -112,6 +112,65 @@ def test_idempotent_equivalent_element_order_h2o_oh2(monkeypatch):
     assert fetched.json()["coefficients"]["vector"] == [2, 1, 2]
 
 
+def test_spaced_charge_sign_balances_and_shares_cache(monkeypatch):
+    """数字与正负号之间的空格不改变组成与电荷。
+
+    ``Fe3 +`` 曾被误解析为 Fe₃⁺（3 个 Fe、电荷 +1），使本应可配平的
+    氧化还原反应被报无法配平；修复后它与 ``Fe3+`` 等价，命中同一缓存。
+    """
+    from app import service
+    from app.cache import ReactionCache
+
+    monkeypatch.setattr(service, "cache", ReactionCache(":memory:"))
+
+    compact = {"reactants": ["Fe3+", "Cu"], "products": ["Fe2+", "Cu2+"]}
+    spaced = {"reactants": ["Fe3 +", "Cu"], "products": ["Fe2 +", "Cu2 +"]}
+
+    r1 = client.post("/api/v1/balance", json=compact)
+    r2 = client.post("/api/v1/balance", json=spaced)
+    assert r1.status_code == r2.status_code == 200
+    d1, d2 = r1.json(), r2.json()
+    assert d1["balanced"] is d2["balanced"] is True
+    assert d1["reaction_id"] == d2["reaction_id"]
+    assert d1["cached"] is False and d2["cached"] is True
+    assert d1["coefficients"]["vector"] == d2["coefficients"]["vector"]
+    assert d2["normalized"]["equation"] == "Cu + 2Fe^3+ -> Cu^2+ + 2Fe^2+"
+    assert d2["charge_balance"]["balanced"] is True
+
+    # 多原子序列前的空格同样不改变下标消歧：NH4 + 仍是 NH₄⁺
+    s1 = client.post(
+        "/api/v1/balance",
+        json={"reactants": ["NH4+", "OH-"], "products": ["NH3", "H2O"]},
+    )
+    s2 = client.post(
+        "/api/v1/balance",
+        json={"reactants": ["NH4 +", "OH -"], "products": ["NH3", "H2 O"]},
+    )
+    assert s1.status_code == s2.status_code == 200
+    assert s1.json()["reaction_id"] == s2.json()["reaction_id"]
+
+    # 二价负离子：SO4 2 - 等价于 SO4 2- / SO4^2-
+    b1 = client.post(
+        "/api/v1/balance", json={"reactants": ["Ba2+", "SO4^2-"], "products": ["BaSO4"]}
+    )
+    b2 = client.post(
+        "/api/v1/balance", json={"reactants": ["Ba2 +", "SO4 2 -"], "products": ["BaSO4"]}
+    )
+    assert b1.status_code == b2.status_code == 200
+    assert b1.json()["reaction_id"] == b2.json()["reaction_id"]
+    assert b2.json()["balanced"] is True
+
+    # /analyze 对两种写法给出一致的规范化结果与电荷分析（input 逐字回显）
+    a1 = client.post("/api/v1/analyze", json=compact).json()
+    a2 = client.post("/api/v1/analyze", json=spaced).json()
+    assert a1["reaction_id"] == a2["reaction_id"]
+    assert a1["normalized"] == a2["normalized"]
+    assert a1["raw"]["elements"] == a2["raw"]["elements"]
+    assert a1["raw"]["charge"] == a2["raw"]["charge"]
+    assert a1["balanced"]["elements"] == a2["balanced"]["elements"]
+    assert a1["balanced"]["charge"] == a2["balanced"]["charge"]
+
+
 def test_idempotent_side_swap_is_different_id(monkeypatch):
     """调换反应物与生成物侧别应得到不同 reaction_id（侧别保留在签名中）。"""
     from app import service
